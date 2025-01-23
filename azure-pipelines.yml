@@ -1,19 +1,45 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
-
 trigger:
 - main
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: 'windows-latest'
+
+variables:
+  azureSubscription: '<Your-Service-Connection-Name>'
+  resourceGroupName: '<Your-Resource-Group>'
+  vmName: '<Your-VM-Name>'
 
 steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+- task: AzurePowerShell@5
+  inputs:
+    azureSubscription: $(azureSubscription)
+    ScriptType: 'InlineScript'
+    Inline: |
+      try {
+          $resourceGroup = "$(resourceGroupName)"
+          $vmName = "$(vmName)"
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+          # Execute RunCommand on the Azure VM
+          $commandId = 'RunPowerShellScript'
+          $script = @'
+          Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
+          Select-Object DisplayName, DisplayVersion, Publisher, InstallDate
+          '@
+
+          # Run the command on the VM
+          $result = Invoke-AzVMRunCommand -ResourceGroupName $resourceGroup -Name $vmName -CommandId $commandId -ScriptString $script
+
+          # Output the result
+          $result.Value | ForEach-Object { $_.Message }
+      }
+      catch {
+          Write-Error "An error occurred while running the command on the VM: $_"
+          throw
+      }
+    azurePowerShellVersion: 'LatestVersion'
+
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      Write-Host "Installed software information retrieved successfully."
