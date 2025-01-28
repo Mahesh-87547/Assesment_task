@@ -5,41 +5,45 @@ pool:
   vmImage: 'windows-latest'
 
 variables:
-  azureSubscription: '<Your-Service-Connection-Name>'
-  resourceGroupName: '<Your-Resource-Group>'
-  vmName: '<Your-VM-Name>'
+  storageAccountName: "<your-storage-account-name>"
+  containerName: "<your-container-name>"
+  blobName: "VSCodeSetup-x64-1.96.4.exe"
+  sasToken: "<your-sas-token>"
+  targetPath: "C:\\Temp\\VSCodeSetup-x64-1.96.4.exe"
 
-steps:
-- task: AzurePowerShell@5
-  inputs:
-    azureSubscription: $(azureSubscription)
-    ScriptType: 'InlineScript'
-    Inline: |
-      try {
-          $resourceGroup = "$(resourceGroupName)"
-          $vmName = "$(vmName)"
+stages:
+- stage: DeployVSCode
+  jobs:
+  - job: DeployToVM
+    displayName: "Install VSCode on Azure VMs"
+    steps:
+    - task: PowerShell@2
+      displayName: "Download and Install VSCode"
+      inputs:
+        targetType: inline
+        script: |
+          # Define variables
+          $storageAccountName = "$(storageAccountName)"
+          $containerName = "$(containerName)"
+          $blobName = "$(blobName)"
+          $sasToken = "$(sasToken)"
+          $targetPath = "$(targetPath)"
+          
+          # Form the URL to the blob
+          $blobUrl = "https://$storageAccountName.blob.core.windows.net/$containerName/$blobName?$sasToken"
+          
+          # Create directory if not exists
+          $targetDir = Split-Path -Path $targetPath
+          if (!(Test-Path -Path $targetDir)) {
+              New-Item -ItemType Directory -Path $targetDir
+          }
 
-          # Execute RunCommand on the Azure VM
-          $commandId = 'RunPowerShellScript'
-          $script = @'
-          Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
-          Select-Object DisplayName, DisplayVersion, Publisher, InstallDate
-          '@
+          # Download the file
+          Write-Host "Downloading $blobUrl to $targetPath"
+          Invoke-WebRequest -Uri $blobUrl -OutFile $targetPath
 
-          # Run the command on the VM
-          $result = Invoke-AzVMRunCommand -ResourceGroupName $resourceGroup -Name $vmName -CommandId $commandId -ScriptString $script
+          # Install the .exe silently
+          Write-Host "Installing $targetPath"
+          Start-Process -FilePath $targetPath -ArgumentList "/silent /verysilent /norestart" -Wait
 
-          # Output the result
-          $result.Value | ForEach-Object { $_.Message }
-      }
-      catch {
-          Write-Error "An error occurred while running the command on the VM: $_"
-          throw
-      }
-    azurePowerShellVersion: 'LatestVersion'
-
-- task: PowerShell@2
-  inputs:
-    targetType: 'inline'
-    script: |
-      Write-Host "Installed software information retrieved successfully."
+          Write-Host "Installation completed."
